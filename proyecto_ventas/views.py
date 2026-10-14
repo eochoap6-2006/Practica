@@ -197,7 +197,7 @@ class ProductoController(CrudBase):
         datos = []
         for producto in self.lista:
             datos.append(producto.a_diccionario())
-        self.gestor.guardar(datos)
+        return self.gestor.guardar(datos)
 
     def validar(self, datos, id_actual=None):
         if id_actual is None:
@@ -541,9 +541,15 @@ class DevolucionController(CrudBase):
                                 venta.precio_unitario)
 
         producto.devolver_stock(devolucion.cantidad)
-        self.productos.guardar()                 # devuelve el stock en productos.json
+        if not self.productos.guardar():
+            producto.descontar_stock(devolucion.cantidad)
+            return False, "No se pudo guardar el stock del producto"
         self.lista.append(devolucion)
-        self.guardar()                           # guarda en devoluciones.json
+        if not self.guardar():
+            self.lista.remove(devolucion)
+            producto.descontar_stock(devolucion.cantidad)
+            self.productos.guardar()
+            return False, "No se pudo guardar la devolución"
         return True, f"Devolución {devolucion.id} registrada por ${devolucion.calcular_total():.2f}"
 
     def actualizar(self, id_devolucion, datos):

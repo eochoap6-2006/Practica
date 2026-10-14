@@ -273,12 +273,17 @@ def anular_venta():
 
 def registrar_devolucion():
     imprimir_titulo("REGISTRAR DEVOLUCIÓN")
+    imprimir_info("Ventas:")
     mostrar_lista(ventas.leer(), "Todavía no hay ventas.")
     datos = {
         "venta_id": pedir_entero("Id de la venta: "),
         "cantidad": pedir_entero("Cantidad a devolver: "),
         "motivo": input("Motivo: "),
     }
+    if datos["venta_id"] is None or datos["cantidad"] is None:
+        imprimir_error("El id de venta y la cantidad deben ser números enteros")
+        return pausa()
+
     mostrar_resultado(*devoluciones.crear(datos))
     pausa()
 
