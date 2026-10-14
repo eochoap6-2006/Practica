@@ -79,6 +79,24 @@ class Cliente(Persona):
         return f"{super().etiqueta()} · {self.email} · {self.ciudad or 'sin ciudad'}"
 
 
+class Proveedor(Persona):
+    """Proveedor ES UNA Persona, con RUC y empresa."""
+
+    def __init__(self, id_registro, nombre, apellido, email, ruc="", empresa=""):
+        super().__init__(id_registro, nombre, apellido, email)
+        self.ruc = ruc
+        self.empresa = empresa
+
+    def a_diccionario(self):
+        datos = super().a_diccionario()
+        datos["ruc"] = self.ruc
+        datos["empresa"] = self.empresa
+        return datos
+
+    def etiqueta(self):
+        return f"{super().etiqueta()} · {self.empresa or 'sin empresa'} · RUC {self.ruc}"
+
+
 # =====================================================================
 # ÚNICA CLASE CON ATRIBUTOS Y MÉTODOS ESTÁTICOS
 # =====================================================================
@@ -88,6 +106,8 @@ class Producto(ModeloBase):
     # ATRIBUTOS ESTÁTICOS (de clase): existen una sola vez, no por objeto
     STOCK_MINIMO = 5          # regla del negocio, igual para todos los productos
     IVA = 0.15                # 15 %
+    DESCUENTO_MAYORISTA = 0.10
+    CANTIDAD_MAYORISTA = 12
     total_creados = 0         # contador compartido
 
     def __init__(self, id_registro, nombre, precio, stock=0):
@@ -108,6 +128,12 @@ class Producto(ModeloBase):
     @staticmethod
     def con_iva(monto):
         return round(monto * (1 + Producto.IVA), 2)
+
+    @staticmethod
+    def precio_mayorista(precio, cantidad):
+        if cantidad >= Producto.CANTIDAD_MAYORISTA:
+            return round(precio * (1 - Producto.DESCUENTO_MAYORISTA), 2)
+        return round(precio, 2)
 
     # MÉTODOS DE INSTANCIA: necesitan los datos de ESTE producto
     def stock_bajo(self):

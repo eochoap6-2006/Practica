@@ -172,6 +172,14 @@ class ClienteController(CrudBase):
         """CONJUNTO de ciudades: sin repetidos. sorted() lo devuelve como lista."""
         return sorted({c.ciudad for c in self.lista if c.ciudad != ""})
 
+    def clientes_por_ciudad(self):
+        """DICCIONARIO de LISTAS: agrupa nombres en su ciudad."""
+        agrupados = {}
+        for cliente in self.lista:
+            ciudad = cliente.ciudad or "Sin ciudad"
+            agrupados.setdefault(ciudad, []).append(cliente.nombre)
+        return agrupados
+
 
 # =====================================================================
 # CONTROLADOR DE PRODUCTOS
@@ -375,11 +383,12 @@ class VentaController(CrudBase):
             return False, error
 
         producto = self.productos.obtener(int(datos["producto_id"]))
+        precio = Producto.precio_mayorista(producto.precio, int(datos["cantidad"]))
         venta = Venta(self.siguiente(),
                       int(datos["cliente_id"]),
                       producto.id,
                       int(datos["cantidad"]),
-                      producto.precio)          # foto del precio del momento
+                      precio)                   # conserva el precio ya descontado
 
         producto.descontar_stock(venta.cantidad)
         self.productos.guardar()                # guarda el stock nuevo en productos.json

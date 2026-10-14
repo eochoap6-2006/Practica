@@ -129,6 +129,16 @@ def eliminar_cliente():
     pausa()
 
 
+def clientes_por_ciudad():
+    imprimir_titulo("CLIENTES POR CIUDAD")
+    agrupados = clientes.clientes_por_ciudad()
+    if not agrupados:
+        imprimir_info("Todavía no hay clientes.")
+    for ciudad, nombres in agrupados.items():
+        print(f"  {ciudad}: {', '.join(nombres)}")
+    pausa()
+
+
 # =====================================================================
 # MENÚ DE PRODUCTOS
 # =====================================================================
@@ -279,6 +289,7 @@ MENU_CLIENTES = {
     "4": ("Ver por id", ver_cliente),
     "5": ("Actualizar", actualizar_cliente),
     "6": ("Eliminar", eliminar_cliente),
+    "8": ("Clientes por ciudad", clientes_por_ciudad),
     "0": ("Volver", None),
 }
 
