@@ -475,6 +475,35 @@ class DevolucionController(CrudBase):
             datos.append(devolucion.a_diccionario())
         return self.gestor.guardar(datos)
 
+    def validar(self, datos):
+        try:
+            venta_id = int(datos.get("venta_id", 0))
+            cantidad = int(datos.get("cantidad", 0))
+        except (TypeError, ValueError):
+            return "venta_id y cantidad deben ser números enteros"
+
+        if cantidad <= 0:
+            return "La cantidad debe ser mayor a 0"
+        if not str(datos.get("motivo", "")).strip():
+            return "El motivo es obligatorio"
+
+        venta = self.ventas.obtener(venta_id)
+        if venta is None:
+            return f"No existe la venta {venta_id}"
+
+        producto = self.productos.obtener(venta.producto_id)
+        if producto is None:
+            return f"No existe el producto {venta.producto_id} de esa venta"
+
+        ya_devuelto = 0
+        for devolucion in self.lista:
+            if devolucion.venta_id == venta_id:
+                ya_devuelto += devolucion.cantidad
+        disponibles = venta.cantidad - ya_devuelto
+        if cantidad > disponibles:
+            return f"Solo quedan {disponibles} unidades por devolver"
+        return None
+
     def leer(self):
         return self.lista
 
@@ -492,37 +521,29 @@ class DevolucionController(CrudBase):
                 or texto in d.fecha or texto == str(d.venta_id)]
 
     def siguiente(self):
-        return max((d.id for d in self.lista), default=0) + 1
+        mayor = 0
+        for devolucion in self.lista:
+            if devolucion.id > mayor:
+                mayor = devolucion.id
+        return mayor + 1
 
     def crear(self, datos):
-        try:
-            venta_id = int(datos.get("venta_id"))
-            cantidad = int(datos.get("cantidad"))
-        except (TypeError, ValueError):
-            return False, "El id de venta y la cantidad deben ser números enteros"
-        if cantidad <= 0:
-            return False, "La cantidad debe ser mayor a 0"
+        # Igual que VentaController.crear(): validar, crear el objeto y guardar.
+        error = self.validar(datos)
+        if error:
+            return False, error
 
-        venta = self.ventas.obtener(venta_id)
-        if venta is None:
-            return False, f"No existe la venta {venta_id}"
+        venta = self.ventas.obtener(int(datos["venta_id"]))
         producto = self.productos.obtener(venta.producto_id)
-        if producto is None:
-            return False, f"No existe el producto {venta.producto_id} de esa venta"
-
-        ya_devuelto = sum(d.cantidad for d in self.lista if d.venta_id == venta_id)
-        if cantidad > venta.cantidad - ya_devuelto:
-            return False, f"Solo quedan {venta.cantidad - ya_devuelto} unidades por devolver"
-
-        devolucion = Devolucion(self.siguiente(), venta_id, cantidad,
+        devolucion = Devolucion(self.siguiente(), venta.id,
+                                int(datos["cantidad"]),
                                 str(datos.get("motivo", "")).strip(),
                                 venta.precio_unitario)
+
+        producto.devolver_stock(devolucion.cantidad)
+        self.productos.guardar()                 # devuelve el stock en productos.json
         self.lista.append(devolucion)
-        if not self.guardar():
-            self.lista.remove(devolucion)
-            return False, "No se pudo guardar la devolución"
-        producto.devolver_stock(cantidad)
-        self.productos.guardar()
+        self.guardar()                           # guarda en devoluciones.json
         return True, f"Devolución {devolucion.id} registrada por ${devolucion.calcular_total():.2f}"
 
     def actualizar(self, id_devolucion, datos):
