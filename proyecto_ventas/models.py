@@ -2,7 +2,7 @@ from datetime import date
 
 
 # =====================================================================
-# CLASE BASE: lo que los tres modelos comparten
+# CLASE BASE: lo que los modelos comparten
 # =====================================================================
 class ModeloBase:
     """Padre de todos los modelos. Guarda el id y define el comportamiento común."""
@@ -14,7 +14,7 @@ class ModeloBase:
     @classmethod
     def desde_diccionario(cls, datos):
         """Diccionario -> objeto. Escrito UNA vez y usado por los tres modelos.
-        cls es la clase que llamó: Cliente, Producto o Venta."""
+        cls es la clase que llamó: Cliente, Producto, Venta o Devolucion."""
         datos = dict(datos)                 # copia, para no tocar el original
         id_registro = datos.pop("id")       # saco el id
         return cls(id_registro, **datos)    # el resto son los campos del modelo
@@ -191,3 +191,33 @@ class Venta(ModeloBase):
         return (f"{self.fecha} · cliente {self.cliente_id} · "
                 f"{self.cantidad} x producto {self.producto_id} "
                 f"= ${self.calcular_total():.2f}")
+
+
+class Devolucion(ModeloBase):
+    """Cantidad devuelta de una venta y precio que tenía al venderse."""
+
+    def __init__(self, id_registro, venta_id, cantidad, motivo,
+                 precio_unitario, fecha=""):
+        super().__init__(id_registro)
+        self.venta_id = int(venta_id)
+        self.cantidad = int(cantidad)
+        self.motivo = motivo
+        self.precio_unitario = float(precio_unitario)
+        self.fecha = fecha or date.today().isoformat()
+
+    def calcular_total(self):
+        return round(self.cantidad * self.precio_unitario, 2)
+
+    def a_diccionario(self):
+        datos = super().a_diccionario()
+        datos["venta_id"] = self.venta_id
+        datos["cantidad"] = self.cantidad
+        datos["motivo"] = self.motivo
+        datos["precio_unitario"] = self.precio_unitario
+        datos["fecha"] = self.fecha
+        return datos
+
+    def etiqueta(self):
+        return (f"{self.fecha} · venta {self.venta_id} · "
+                f"{self.cantidad} unidad(es) · ${self.calcular_total():.2f} "
+                f"· {self.motivo or 'sin motivo'}")

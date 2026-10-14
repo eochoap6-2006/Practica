@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from models import Cliente, Producto, Venta
+from models import Cliente, Producto, Venta, Devolucion
 from shared.json_manager import GestorJSON
 from shared.herramientas import es_email_valido
 
@@ -405,6 +405,10 @@ class VentaController(CrudBase):
         venta = self.obtener(id_venta)
         if venta is None:
             return False, f"No existe la venta {id_venta}"
+        if hasattr(self, "devoluciones"):
+            for devolucion in self.devoluciones.leer():
+                if devolucion.venta_id == id_venta:
+                    return False, "La venta tiene devoluciones; elimínelas antes de anularla"
 
         producto = self.productos.obtener(venta.producto_id)
         if producto is not None:
@@ -448,3 +452,138 @@ class VentaController(CrudBase):
         for venta in self.lista:
             total += venta.calcular_total()
         return round(total, 2)
+
+
+# =====================================================================
+# CONTROLADOR DE DEVOLUCIONES
+# =====================================================================
+class DevolucionController(CrudBase):
+
+    def __init__(self, ventas, productos, archivo="data/devoluciones.json"):
+        self.ventas = ventas
+        self.productos = productos
+        self.gestor = GestorJSON(archivo)
+        self.lista = []
+        for datos in self.gestor.leer():
+            self.lista.append(Devolucion.desde_diccionario(datos))
+        # Al anular una venta hay que comprobar primero sus devoluciones.
+        self.ventas.devoluciones = self
+
+    def guardar(self):
+        datos = []
+        for devolucion in self.lista:
+            datos.append(devolucion.a_diccionario())
+        return self.gestor.guardar(datos)
+
+    def leer(self):
+        return self.lista
+
+    def obtener(self, id_devolucion):
+        for devolucion in self.lista:
+            if devolucion.id == id_devolucion:
+                return devolucion
+        return None
+
+    def buscar(self, texto):
+        texto = str(texto).strip().lower()
+        if not texto:
+            return []
+        return [d for d in self.lista if texto in d.motivo.lower()
+                or texto in d.fecha or texto == str(d.venta_id)]
+
+    def siguiente(self):
+        return max((d.id for d in self.lista), default=0) + 1
+
+    def crear(self, datos):
+        try:
+            venta_id = int(datos.get("venta_id"))
+            cantidad = int(datos.get("cantidad"))
+        except (TypeError, ValueError):
+            return False, "El id de venta y la cantidad deben ser números enteros"
+        if cantidad <= 0:
+            return False, "La cantidad debe ser mayor a 0"
+
+        venta = self.ventas.obtener(venta_id)
+        if venta is None:
+            return False, f"No existe la venta {venta_id}"
+        producto = self.productos.obtener(venta.producto_id)
+        if producto is None:
+            return False, f"No existe el producto {venta.producto_id} de esa venta"
+
+        ya_devuelto = sum(d.cantidad for d in self.lista if d.venta_id == venta_id)
+        if cantidad > venta.cantidad - ya_devuelto:
+            return False, f"Solo quedan {venta.cantidad - ya_devuelto} unidades por devolver"
+
+        devolucion = Devolucion(self.siguiente(), venta_id, cantidad,
+                                str(datos.get("motivo", "")).strip(),
+                                venta.precio_unitario)
+        self.lista.append(devolucion)
+        if not self.guardar():
+            self.lista.remove(devolucion)
+            return False, "No se pudo guardar la devolución"
+        producto.devolver_stock(cantidad)
+        self.productos.guardar()
+        return True, f"Devolución {devolucion.id} registrada por ${devolucion.calcular_total():.2f}"
+
+    def actualizar(self, id_devolucion, datos):
+        devolucion = self.obtener(id_devolucion)
+        if devolucion is None:
+            return False, f"No existe la devolución {id_devolucion}"
+        if not datos:
+            return False, "No se indicó ningún cambio"
+        desconocidos = set(datos) - {"cantidad", "motivo"}
+        if desconocidos:
+            return False, f"Campos no válidos: {', '.join(sorted(desconocidos))}"
+
+        try:
+            cantidad = int(datos.get("cantidad", devolucion.cantidad))
+        except (TypeError, ValueError):
+            return False, "La cantidad debe ser un número entero"
+        if cantidad <= 0:
+            return False, "La cantidad debe ser mayor a 0"
+
+        venta = self.ventas.obtener(devolucion.venta_id)
+        if venta is None:
+            return False, "No existe la venta de esta devolución"
+        producto = self.productos.obtener(venta.producto_id)
+        if producto is None:
+            return False, "No existe el producto de esta devolución"
+        otras = sum(d.cantidad for d in self.lista
+                    if d.venta_id == venta.id and d.id != id_devolucion)
+        if cantidad + otras > venta.cantidad:
+            return False, f"Solo se pueden devolver {venta.cantidad - otras} unidades"
+
+        diferencia = cantidad - devolucion.cantidad
+        if diferencia < 0 and producto.stock < -diferencia:
+            return False, "No hay stock suficiente para reducir esta devolución"
+
+        anterior = (devolucion.cantidad, devolucion.motivo)
+        devolucion.cantidad = cantidad
+        devolucion.motivo = str(datos.get("motivo", devolucion.motivo)).strip()
+        if not self.guardar():
+            devolucion.cantidad, devolucion.motivo = anterior
+            return False, "No se pudo guardar la devolución"
+        producto.stock += diferencia
+        self.productos.guardar()
+        return True, f"Devolución {id_devolucion} actualizada"
+
+    def eliminar(self, id_devolucion):
+        devolucion = self.obtener(id_devolucion)
+        if devolucion is None:
+            return False, f"No existe la devolución {id_devolucion}"
+        venta = self.ventas.obtener(devolucion.venta_id)
+        if venta is None:
+            return False, "No existe la venta de esta devolución"
+        producto = self.productos.obtener(venta.producto_id)
+        if producto is None:
+            return False, "No existe el producto de esta devolución"
+        if producto.stock < devolucion.cantidad:
+            return False, "No hay stock suficiente para eliminar esta devolución"
+
+        self.lista.remove(devolucion)
+        if not self.guardar():
+            self.lista.append(devolucion)
+            return False, "No se pudo eliminar la devolución"
+        producto.descontar_stock(devolucion.cantidad)
+        self.productos.guardar()
+        return True, f"Devolución {id_devolucion} eliminada"
